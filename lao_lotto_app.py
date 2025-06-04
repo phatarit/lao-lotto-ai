@@ -6,6 +6,13 @@ import random
 st.set_page_config(page_title="หวยลาว AI", layout="centered")
 
 st.title("🇱🇦 วิเคราะห์หวยลาวด้วย AI")
+st.subheader("📥 วางข้อมูลย้อนหลังแบบชุด (ละเว้นบรรทัดว่าง)")
+bulk_input = st.text_area("วางผลหวย เช่น 1234\\n4567\\n7890", height=120)
+if st.button("📌 เพิ่มจากข้อความ"):
+    for line in bulk_input.strip().split("\\n"):
+        num = line.strip()
+        if num.isdigit() and len(num) == 4:
+            st.session_state.lao_lotto.append(num)
 st.caption("ระบบวิเคราะห์หวยลาว 4 หลัก พร้อมทำนายเลขเด่น สองตัว สามตัว สี่ตัว")
 
 if "lao_lotto" not in st.session_state:
@@ -61,10 +68,10 @@ if st.session_state.lao_lotto:
     triple_random = f"{random.randint(0,9)}{digit}{random.randint(0,9)}"
     quad = f"{random.randint(1,9)}{digit}{random.randint(0,9)}{random.randint(0,9)}"
 
-    st.markdown(f"**เลขเด่น:** `{digit}`")
-    st.markdown(f"**เลขสองตัวแนะนำ:** {', '.join(pairs)}")
-    st.markdown(f"**เลขลากสามตัว:** {' '.join(triple)}")
-    st.markdown(f"**เลขเสียวสามตัว:** `{triple_random}`")
-    st.markdown(f"**เลขโชคสี่ตัว:** `{quad}`")
+    st.markdown(f"<h2 style='color:red;'>เลขเด่น: {digit}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='color:red;'>เลขสองตัวแนะนำ: {', '.join(pairs)}</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='color:red;'>เลขลากสามตัว: {' '.join(triple)}</h4>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='color:red;'>เลขเสียวสามตัว: {triple_random}</h4>", unsafe_allow_html=True)
+    st.markdown(f"<h4 style='color:red;'>เลขโชคสี่ตัว: {quad}</h4>", unsafe_allow_html=True)
 else:
     st.info("กรุณากรอกข้อมูลหวยลาวย้อนหลังอย่างน้อย 1 งวด")
