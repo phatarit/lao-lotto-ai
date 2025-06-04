@@ -1,0 +1,70 @@
+import streamlit as st
+import pandas as pd
+from collections import Counter
+import random
+
+st.set_page_config(page_title="หวยลาว AI", layout="centered")
+
+st.title("🇱🇦 วิเคราะห์หวยลาวด้วย AI")
+st.caption("ระบบวิเคราะห์หวยลาว 4 หลัก พร้อมทำนายเลขเด่น สองตัว สามตัว สี่ตัว")
+
+if "lao_lotto" not in st.session_state:
+    st.session_state.lao_lotto = []
+
+st.subheader("🧾 กรอกผลหวยลาวย้อนหลัง (4 หลัก)")
+cols = st.columns(4)
+d1 = cols[0].text_input("หลักพัน", max_chars=1)
+d2 = cols[1].text_input("หลักร้อย", max_chars=1)
+d3 = cols[2].text_input("หลักสิบ", max_chars=1)
+d4 = cols[3].text_input("หลักหน่วย", max_chars=1)
+
+if st.button("➕ เพิ่ม"):
+    if all([d.isdigit() for d in [d1, d2, d3, d4]]):
+        st.session_state.lao_lotto.append(d1 + d2 + d3 + d4)
+        st.success("เพิ่มข้อมูลแล้ว")
+    else:
+        st.warning("กรุณากรอกเลขให้ครบทุกหลัก (0-9)")
+
+if st.button("🗑️ ลบรายการล่าสุด"):
+    if st.session_state.lao_lotto:
+        st.session_state.lao_lotto.pop()
+        st.success("ลบแล้ว")
+
+if st.session_state.lao_lotto:
+    df = pd.DataFrame(st.session_state.lao_lotto, columns=["เลข 4 หลัก"])
+    st.dataframe(df)
+
+    last_1 = st.session_state.lao_lotto[-1] if len(st.session_state.lao_lotto) >= 1 else ""
+    last_2 = st.session_state.lao_lotto[-2] if len(st.session_state.lao_lotto) >= 2 else ""
+
+    flow = [d for d in last_1 if d in last_2]
+    cross = [d for d in last_1 if d in st.session_state.lao_lotto[-3]] if len(st.session_state.lao_lotto) >= 3 else []
+    recent_10 = st.session_state.lao_lotto[-10:]
+    all_digits = "".join(recent_10)
+    freq_all = Counter(all_digits).most_common()
+    most_freq = freq_all[0][0] if freq_all else "-"
+    missing = [d for d in "0123456789" if d not in "".join(st.session_state.lao_lotto[-5:])]
+    random_digit = str(random.choice(list("0123456789")))
+
+    st.subheader("📊 วิเคราะห์ข้อมูลหวยลาว")
+    st.markdown(f"**1. เลขไหล:** {' '.join(flow) if flow else 'ไม่มี'}")
+    st.markdown(f"**2. เลขข้ามงวด:** {' '.join(cross) if cross else 'ไม่มี'}")
+    st.markdown(f"**3. เลขซ้ำบ่อย (10 งวด):** {most_freq}")
+    st.markdown(f"**4. เลขหายนาน (5 งวด):** {', '.join(missing)}")
+    st.markdown(f"**5. เลขสุ่ม:** {random_digit}")
+
+    st.subheader("🔮 ทำนายงวดถัดไป")
+    digit = most_freq
+    pairs = [f"{digit}{(int(digit)+i)%10}" for i in range(1, 5)]
+    lead_pair = random.choice(pairs)
+    triple = [f"{lead_pair[0]}{lead_pair[1]}{i}" for i in range(10)]
+    triple_random = f"{random.randint(0,9)}{digit}{random.randint(0,9)}"
+    quad = f"{random.randint(1,9)}{digit}{random.randint(0,9)}{random.randint(0,9)}"
+
+    st.markdown(f"**เลขเด่น:** `{digit}`")
+    st.markdown(f"**เลขสองตัวแนะนำ:** {', '.join(pairs)}")
+    st.markdown(f"**เลขลากสามตัว:** {' '.join(triple)}")
+    st.markdown(f"**เลขเสียวสามตัว:** `{triple_random}`")
+    st.markdown(f"**เลขโชคสี่ตัว:** `{quad}`")
+else:
+    st.info("กรุณากรอกข้อมูลหวยลาวย้อนหลังอย่างน้อย 1 งวด")
