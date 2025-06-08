@@ -1,86 +1,118 @@
-import streamlit as st
-import pandas as pd
-from collections import Counter
-import random
+# ─── Lao-AI v4.0 ───  (Streamlit ≥ 1.32  •  pandas)
+import streamlit as st, pandas as pd
+from collections import Counter, defaultdict
+from itertools import combinations, islice
+import random, math
 
-st.set_page_config(page_title="หวยลาว AI", layout="centered")
-st.title("🇱🇦 วิเคราะห์หวยลาวด้วย AI")
-st.caption("ระบบวิเคราะห์หวยลาว 4 หลัก พร้อมทำนายเลขเด่น สองตัว สามตัว สี่ตัว")
+# ───────── CONFIG ─────────
+ALPHA_EWMA   = 0.87       # ถ่วงน้ำหนักเลขเด่น
+PAIR_TOP_N   = 12         # ดึง top-N จากแต่ละตำแหน่งก่อน cross-mix
+PAIRS_KEEP   = 20         # ชุดสองตัวที่แอปแสดง
+TRIPLE_KEEP  = 20         # ชุดสามตัว
+QUAD_KEEP    = 20         # ชุดสี่ตัว (ไม่เปิดตำแหน่ง)
+MIN_DRAW     = 10         # ข้อมูลย้อนหลังขั้นต่ำ
 
-if "lao_lotto" not in st.session_state:
-    st.session_state.lao_lotto = []
+st.set_page_config(page_title='หวยลาว AI v4.0', page_icon='🇱🇦', layout='centered')
+st.title('🎯 Lao-AI v4 – EWMA + 2-Pos Markov + Unordered Combos')
 
-# 🧾 ช่องวางข้อมูลย้อนหลัง
-st.subheader("📥 วางข้อมูลย้อนหลังแบบชุด")
-bulk_input = st.text_area("วางผลหวย เช่น 1234\n4567\n7890", height=120)
-if st.button("📌 เพิ่มจากข้อความ"):
-    added = 0
-    for line in bulk_input.strip().split("\n"):
-        num = line.strip()
-        if num.isdigit() and len(num) == 4:
-            st.session_state.lao_lotto.append(num)
-            added += 1
-    st.success(f"✅ เพิ่มแล้ว {added} รายการ")
+# ───────── INPUT ─────────
+raw = st.text_area('📥 วางผล 4-หลัก (หนึ่งบรรทัด/งวด)', height=180)
+draws = [l.strip() for l in raw.splitlines() if l.strip().isdigit() and len(l.strip()) == 4]
 
-# ✏️ กรอกข้อมูลทีละงวด
-st.subheader("➕ เพิ่มข้อมูล 1 งวด (4 หลัก)")
-cols = st.columns(4)
-d1 = cols[0].text_input("หลักพัน", max_chars=1)
-d2 = cols[1].text_input("หลักร้อย", max_chars=1)
-d3 = cols[2].text_input("หลักสิบ", max_chars=1)
-d4 = cols[3].text_input("หลักหน่วย", max_chars=1)
+st.write(f'📊 โหลดแล้ว **{len(draws)}** งวด')
 
-if st.button("➕ เพิ่มข้อมูล 1 งวด"):
-    if all([d.isdigit() for d in [d1, d2, d3, d4]]):
-        st.session_state.lao_lotto.append(d1 + d2 + d3 + d4)
-        st.success("✅ เพิ่มข้อมูลแล้ว")
-    else:
-        st.warning("⚠️ กรุณากรอกเลขให้ครบทุกหลัก")
+if len(draws) < MIN_DRAW:
+    st.info(f'ต้องการอย่างน้อย {MIN_DRAW} งวด')
+    st.stop()
 
-if st.button("🗑️ ลบรายการล่าสุด"):
-    if st.session_state.lao_lotto:
-        st.session_state.lao_lotto.pop()
-        st.success("🧹 ลบรายการล่าสุดแล้ว")
+st.dataframe(pd.DataFrame(draws, columns=['เลข 4 หลัก']), use_container_width=True)
 
-# 📊 วิเคราะห์
-if st.session_state.lao_lotto:
-    df = pd.DataFrame(st.session_state.lao_lotto, columns=["เลข 4 หลัก"])
-    st.dataframe(df)
+# ───────── HELPER ─────────
+def ewma_digit(hist, alpha=ALPHA_EWMA, top_k=1):
+    sc = Counter()
+    for i, num in enumerate(reversed(hist)):
+        w = alpha ** i
+        for d in num:
+            sc[d] += w
+    return [d for d, _ in sc.most_common(top_k)]
 
-    last_1 = st.session_state.lao_lotto[-1]
-    last_2 = st.session_state.lao_lotto[-2] if len(st.session_state.lao_lotto) >= 2 else ""
-    last_3 = st.session_state.lao_lotto[-3] if len(st.session_state.lao_lotto) >= 3 else ""
+def build_pos_markov(hist):
+    pos1, pos2 = defaultdict(Counter), defaultdict(Counter)   # 2 ตำแหน่ง (พัน+ร้อย) & (สิบ+หน่วย)
+    for p, c in zip(hist[:-1], hist[1:]):
+        pos1[p[:2]][c[:2]] += 1
+        pos2[p[2:]][c[2:]] += 1
+    return pos1, pos2
 
-    flow = [d for d in last_1 if d in last_2]
-    cross = [d for d in last_1 if d in last_3]
-    recent_10 = st.session_state.lao_lotto[-10:]
-    all_digits = "".join(recent_10)
-    freq_all = Counter(all_digits).most_common()
-    most_freq = freq_all[0][0] if freq_all else "-"
-    missing = [d for d in "0123456789" if d not in "".join(st.session_state.lao_lotto[-5:])]
-    random_digit = str(random.choice("0123456789"))
+def two_combo_markov(hist, keep=PAIRS_KEEP, n_each=PAIR_TOP_N):
+    p1, p2 = build_pos_markov(hist)
+    last1, last2 = hist[-1][:2], hist[-1][2:]
+    cand1 = [x for x, _ in p1[last1].most_common(n_each)]
+    cand2 = [x for x, _ in p2[last2].most_common(n_each)]
 
-    st.subheader("📊 วิเคราะห์ข้อมูลย้อนหลัง")
-    st.markdown(f"**1. เลขไหล:** {' '.join(flow) if flow else 'ไม่มี'}")
-    st.markdown(f"**2. เลขข้ามงวด:** {' '.join(cross) if cross else 'ไม่มี'}")
-    st.markdown(f"**3. เลขซ้ำบ่อย (10 งวด):** {freq_all}")
-    st.markdown(f"**4. เลขหายนาน (5 งวด):** {', '.join(missing)}")
-    st.markdown(f"**5. เลขสุ่ม:** {random_digit}")
+    combos = {"".join(sorted(a + b)) for a in cand1 for b in cand2}
+    # เติม hot-digit ให้ครบถ้าไม่ถึง keep
+    hot = ewma_digit(hist, top_k=3)
+    for a, b in combinations(hot, 2):
+        combos.add("".join(sorted(a + b)))
+        if len(combos) >= keep:
+            break
+    return list(islice(combos, keep))
 
-    # 🔮 ทำนาย
-    st.subheader("🔮 ทำนายงวดถัดไป")
-    digit = most_freq
-    pairs = [f"{digit}{(int(digit)+i)%10}" for i in range(1, 5)]
-    lead_pair = random.choice(pairs)
-    triple = [f"{lead_pair[0]}{lead_pair[1]}{i}" for i in range(10)]
-    triple_random = f"{random.randint(0,9)}{digit}{random.randint(0,9)}"
-    quad = f"{random.randint(1,9)}{digit}{random.randint(0,9)}{random.randint(0,9)}"
+def unordered_multiset(nums, k_keep):
+    combos = sorted(nums, key=lambda x: (len(set(x)), x))  # just sort for consistency
+    return combos[:k_keep]
 
-    st.markdown(f"<h2 style='color:red;'>เลขเด่น: {digit}</h2>", unsafe_allow_html=True)
-    st.markdown(f"<h3 style='color:red;'>เลขสองตัวแนะนำ: {', '.join(pairs)}</h3>", unsafe_allow_html=True)
-    st.markdown(f"<h4 style='color:red;'>เลขลากสามตัว: {' '.join(triple)}</h4>", unsafe_allow_html=True)
-    st.markdown(f"<h4 style='color:red;'>เลขเสียวสามตัว: {triple_random}</h4>", unsafe_allow_html=True)
-    st.markdown(f"<h4 style='color:red;'>เลขโชคสี่ตัว: {quad}</h4>", unsafe_allow_html=True)
+def three_combo(hist, keep=TRIPLE_KEEP):
+    pool = list(dict.fromkeys(ewma_digit(hist, top_k=5) + list(hist[-1])))[:8]
+    triples = {"".join(sorted(c)) for c in combinations(pool, 3)}
+    return unordered_multiset(triples, keep)
 
-else:
-    st.info("กรุณากรอกข้อมูลหวยลาวอย่างน้อย 1 งวด")
+def four_combo(hist, keep=QUAD_KEEP):
+    pool = list(dict.fromkeys(ewma_digit(hist, top_k=6) + list(hist[-1])))[:10]
+    quads = {"".join(sorted(c)) for c in combinations(pool, 4)}
+    return unordered_multiset(quads, keep)
+
+# ───────── CALCULATE ─────────
+hot_digit     = ewma_digit(draws)[0]
+pair20        = two_combo_markov(draws)
+triple20      = three_combo(draws)
+quad20        = four_combo(draws)
+
+focus_pairs   = pair20[:5]
+focus_triple  = triple20[0]
+
+# ───────── DISPLAY ─────────
+st.markdown(f"<h2 style='color:red;text-align:center'>เลขเด่น: {hot_digit}</h2>", unsafe_allow_html=True)
+
+c1, c2 = st.columns(2)
+with c1:
+    st.subheader('สองตัว (20 ชุด • ไม่สนตำแหน่ง)')
+    st.markdown('<br>'.join('  '.join(pair20[i:i+10]) for i in range(0, len(pair20), 10)),
+                unsafe_allow_html=True)
+
+with c2:
+    st.subheader('สามตัว (20 ชุด • เต็ง-โต๊ด)')
+    st.markdown('<br>'.join('  '.join(triple20[i:i+10]) for i in range(0, len(triple20), 10)),
+                unsafe_allow_html=True)
+
+st.subheader('สี่ตัว (20 ชุด • ไม่สนตำแหน่ง)')
+st.markdown('<br>'.join('  '.join(quad20[i:i+10]) for i in range(0, len(quad20), 10)),
+            unsafe_allow_html=True)
+
+st.subheader('🚩 ชุดเน้น')
+st.markdown(f"**สองตัว:** {', '.join(focus_pairs)}\n\n**สามตัว:** {focus_triple}")
+
+# ───────── (OPTIONAL) QUICK HIT-RATE TEST ─────────
+def hit2(pred, act): return "".join(sorted(act[2:])) in pred or "".join(sorted(act[:2])) in pred
+def hit3(pred, act): return "".join(sorted(act)) in pred
+def walk(hist, fn, hit, start=MIN_DRAW):
+    h=t=0
+    for i in range(start, len(hist)):
+        if hit(fn(hist[:i]), hist[i]): h+=1
+        t+=1
+    return h/t if t else 0
+if len(draws) >= 40:
+    st.caption(f"Hit-ย้อนหลัง (20 ชุด): สองตัว≈{walk(draws, two_combo_markov, hit2)*100:.1f}% | "
+               f"สามตัว≈{walk(draws, three_combo, hit3)*100:.1f}%")
+
+st.caption('© 2025 Lao-AI v4.0 – EWMA & Two-Pos Markov')
