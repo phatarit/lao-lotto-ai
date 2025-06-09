@@ -4,12 +4,12 @@ from itertools import combinations
 
 # ───────────────── CONFIG ─────────────────
 st.set_page_config(page_title="LoasLottoAI", page_icon="🇱🇦", layout="centered")
-st.title("🎯 LoasLottoAI – Lao‑4D Analyzer & Combos")
+st.title("🎯 LoasLottoAI")
 
 MIN_DRAW        = 30        # ข้อมูลย้อนหลังขั้นต่ำ
 WINDOW_DIGIT    = 60        # ระยะหน้าต่างคำนวณตัวเด่น
 PAIR_TOP_MARK   = 40        # Top‑k 4‑Markov
-PAIR_KEEP       = 30        # แสดงคู่ 30 ชุด
+PAIR_KEEP       = 10        # แสดงคู่ 10 ชุด (ลดจาก 30)
 TRIPLE_KEEP     = 10        # แสดงสามตัว 10 ชุด
 ALPHA_GRID      = [0.80,0.85,0.90,0.93,0.96]
 
@@ -54,7 +54,6 @@ def quick_hit_pairs(hist, alpha, n_eval=50):
     if len(hist)<MIN_DRAW+5: return 0
     hits=tot=0
     for i in range(MIN_DRAW,len(hist)):
-        hd=hot_digit(hist[:i],alpha)
         pairs=two_combo(hist[:i],alpha)
         if any(unordered2(hist[i][x],hist[i][y]) in pairs for x in range(4) for y in range(x+1,4)):
             hits+=1
@@ -90,7 +89,7 @@ def two_combo(hist, alpha):
     # momentum pairs
     recent=hist[-20:]
     cnt=Counter(unordered2(d[i],d[j]) for d in recent for i in range(4) for j in range(i+1,4))
-    mom=[p for p,c in cnt.items() if c>=2]
+    mom=[p for p,c in cnt.items() if c>=3]   # กรองให้เข้มขึ้น (≥3 ครั้ง)
     combos=list(dict.fromkeys(base_pairs+mom))[:PAIR_KEEP]
     return combos
 
@@ -116,8 +115,8 @@ st.markdown(f"<h2 style='color:red;text-align:center'>รูด 19 ประต�
 
 c1,c2 = st.columns(2)
 with c1:
-    st.subheader("เจาะสองตัว (30 ชุด ไม่สนตำแหน่ง)")
-    st.markdown("<br>".join("  ".join(combo_two[i:i+10]) for i in range(0,len(combo_two),10)), unsafe_allow_html=True)
+    st.subheader("เจาะสองตัว (10 ชุด ไม่สนตำแหน่ง)")
+    st.markdown("  ".join(combo_two), unsafe_allow_html=True)
 with c2:
     st.subheader("เจาะสามตัว (10 ชุด ไม่สนตำแหน่ง)")
     st.markdown("<br>".join("  ".join(combo_three[i:i+5]) for i in range(0,len(combo_three),5)), unsafe_allow_html=True)
