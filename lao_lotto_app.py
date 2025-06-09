@@ -12,6 +12,7 @@ PAIR_TOP_MARK   = 40        # Top-k 4-Markov
 PAIR_KEEP       = 10        # เจาะคู่ 10 ชุด
 TRIPLE_KEEP     = 10        # เจาะสามตัว 10 ชุด
 ALPHA_GRID      = [0.80,0.85,0.90,0.93,0.96]
+SPECIAL_DIGITS  = ['4','5','6','2']  # เลขพิเศษผสมทุกชุด
 
 # ───────────────── INPUT ─────────────────
 raw = st.text_area(
@@ -53,7 +54,6 @@ def quick_hit_pairs(hist, alpha, n_eval=50):
     hits = tot = 0
     for i in range(MIN_DRAW, len(hist)):
         pairs = two_combo(hist[:i], alpha)
-        # ตรวจทุกคู่ในเลข 4 หลัก
         matched = False
         for x in range(4):
             for y in range(x + 1, 4):
@@ -86,22 +86,32 @@ def hot_digit(hist, alpha):
 def two_combo(hist, alpha):
     M = build_markov4(hist)
     mark_pred = [p for p, _ in M[hist[-1]].most_common(PAIR_TOP_MARK)]
-    base_pairs = []
-    for m in mark_pred:
-        for x, y in combinations(m, 2):
-            base_pairs.append(unordered2(x, y))
+    base_pairs = [unordered2(x, y) for m in mark_pred for x, y in combinations(m, 2)]
+    # momentum pairs (occurrence ≥3 in 20 งวด)
     recent = hist[-20:]
-    cnt = Counter(
-        unordered2(d[i], d[j]) for d in recent for i in range(4) for j in range(i+1, 4)
-    )
+    cnt = Counter(unordered2(d[i], d[j]) for d in recent for i in range(4) for j in range(i+1, 4))
     mom = [p for p, c in cnt.items() if c >= 3]
-    combos = list(dict.fromkeys(base_pairs + mom))[:PAIR_KEEP]
+    # special pairs from SPECIAL_DIGITS
+    special_pairs = [unordered2(a, b) for a, b in combinations(SPECIAL_DIGITS, 2)]
+    # missing digits from last 5 draws
+    recent5 = hist[-5:]
+    missing = [d for d in '0123456789' if all(d not in draw for draw in recent5)]
+    missing_pairs = [unordered2(a, b) for a, b in combinations(missing, 2)]
+    combos = list(dict.fromkeys(base_pairs + mom + special_pairs + missing_pairs))[:PAIR_KEEP]
     return combos
 
 def three_combo(hist, alpha):
     pool = list(dict.fromkeys(
-        ewma_digit(hist, alpha, top_k=5) + list(hist[-1]) + [hot_digit(hist, alpha)]
-    ))[:12]
+        ewma_digit(hist, alpha, top_k=5)
+        + list(hist[-1])
+        + [hot_digit(hist, alpha)]
+        + SPECIAL_DIGITS
+    ))[:15]
+    # include missing digits
+    recent5 = hist[-5:]
+    missing = [d for d in '0123456789' if all(d not in draw for draw in recent5)]
+    pool += missing
+    pool = list(dict.fromkeys(pool))[:15]
     cnt = Counter("".join(hist[-30:]))
     score = lambda t: math.prod(cnt[d] + 1 for d in t)
     triples = sorted({unordered3(c) for c in combinations(pool, 3)}, key=score, reverse=True)
@@ -116,6 +126,7 @@ combo_three = three_combo(draws, a)
 thousands = draws[-1][0]
 four_digit = thousands + combo_three[0]
 
+# แสดงผล
 st.markdown(
     f"<h2 style='color:red;text-align:center'>รูด 19 ประตู: {main_digit}</h2>", unsafe_allow_html=True
 )
